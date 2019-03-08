@@ -1,0 +1,35 @@
+-- after choosing a day (must change in both subqueries) this query will show you every order and their proceeding two orders in the same row
+-- this query is good for analyzing order behavior when certain fileds are changed or to measure latency
+-- query was originally created to help identify orders using an exploratory regime whose order quantity would greatly increase and then get filled
+-- depending on the day (and if you are searching all venues and all orders) this query can take any where be 10-15 minutes
+
+SELECT Message_Type, ORDER_ID, PARENT_ORDER_ID, CURRENCY, TRANSACTION_DESTINATION, Message_Time, QUANTITY,
+LEAD(Message_Time,1) OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) - Message_Time AS Time_Till_Next,
+LEAD(QUANTITY,1) OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) as NEXT_Quantity,
+LEAD(MESSAGE_TYPE,1)OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) AS NEXT_Message,
+LEAD(Message_Time,2) OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) - LEAD(Message_Time,1) OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) AS Time_Till_Following,
+LEAD(QUANTITY,2) OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) as Following_Quantity,
+LEAD(MESSAGE_TYPE,2)OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) AS Following_Message,
+CASE WHEN LEAD(MESSAGE_TYPE,2)OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) = 'Fill' THEN LEAD(Quantity,2)OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) ELSE 0 END AS Filled_Quantity,
+LEAD(Price,2)OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) * LEAD(Quantity,2)OVER (PARTITION BY parent_order_id,TRANSACTION_DESTINATION  order by Message_Time) AS principle
+FROM
+(SELECT 'ORDER' AS Message_Type, orders.order_id, orders.PARENT_ORDER_ID, 
+orders.CURRENCY,
+orders.START_TIME_MICROS AS Message_Time,
+orders.TRANSACTION_DESTINATION,
+round(orders.QUANTITY,0) AS QUANTITY, NULL AS Price
+FROM orders
+WHERE orders.TRADE_EPOCH_DAY = (to_date('2019-01-30','YYYY-MM-DD') - to_date('1970-01-01','YYYY-MM-DD'))
+AND orders.SYSTEM_TYPE = 'IR'
+UNION 
+SELECT 'Fill' AS Message_Type,fills.ORDER_ID, 
+orders.PARENT_ORDER_ID,
+orders.CURRENCY,
+fills.TIME_MICROS AS Message_Time,
+fills.TRANSACTION_DESTINATION,
+round(fills.QUANTITY,0) AS Filled_QUANTITY, fills.PRICE
+FROM FILLS
+INNER JOIN ORDERS ON fills.ORDER_ID = orders.ORDER_ID
+WHERE orders.TRADE_EPOCH_DAY = (to_date('2019-01-30','YYYY-MM-DD') - to_date('1970-01-01','YYYY-MM-DD'))
+AND fills.SYSTEM_TYPE = 'IR'
+ORDER BY PARENT_ORDER_ID, Message_Time)

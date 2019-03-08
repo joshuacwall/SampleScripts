@@ -1,0 +1,9 @@
+SELECT 
+     TOTAL_ORD, 
+     STARTING, 
+     DSTAMP 
+FROM '{}'
+WHERE date(DSTAMP) = '{}' 
+AND ORDER_TYPE = '{}' 
+and SYSTEM_INSTANCE = '{}'
+Order by DSTAMP;
